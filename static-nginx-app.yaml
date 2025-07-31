@@ -1,0 +1,23 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: myapp
+  name: myapp
+  namespace: myproject
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      namespace: myproject
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: gaming4funnel/nginx-app:init
+      restartPolicy: Always

@@ -1,0 +1,116 @@
+name: CICD
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+env:
+  IMAGE_TAG: ${{ secrets.DOCKERHUB_USERNAME }}/nginx-app
+  RELEASE_NAME: myapp
+  NAMESPACE: myproject
+
+jobs:
+  build-and-push:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Get current data
+        run: |
+          echo "DATE=$(date +'%d-%m-%Y-%H-%M-%S')" >> $GITHUB_ENV
+
+      - name: Extract build from tag or set build to nightly
+        run: |
+          echo "GITHUB_REF: ${GITHUB_REF}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            BUILD=${GITHUB_REF#refs/tags/}
+          else
+            BUILD="nightly-${{ env.DATE }}"
+          fi
+          echo "Using build: $BUILD"
+          echo "BUILD=${BUILD}" >> $GITHUB_ENV
+
+      - name: Change build in index.html
+        run: |
+          sed -i "s|BUILD|BUILD: ${{ env.BUILD }}|" ./index.html
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_TAG }}:${{ env.BUILD }}
+  
+  deploy:
+    needs: build-and-push
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: List files in the working directory
+        run: |
+          ls -la
+
+      - name: Set up Kubernetes
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Extract build from tag
+        run: |
+          echo "GITHUB_REF: ${GITHUB_REF}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            BUILD=${GITHUB_REF#refs/tags/};
+          fi
+          echo "Using build: $BUILD"
+          echo "BUILD=${BUILD}" >> $GITHUB_ENV
+
+      - name: Change build in index.html
+        run: |
+          sed -i "s|BUILD|BUILD: ${{ env.BUILD }}|" ./index.html
+
+      - name: Replace image tag in deployment.yaml
+        run: |
+          if [ ! -f ./nginx-app.yaml ]; then
+            echo "nginx-app.yaml not found in the current directory"
+            exit 1
+          fi
+          sed -i "s|image: littlelucidlynx/nginx-app:.*|image: ${{ env.IMAGE_TAG }}:${{ env.BUILD }}|" ./nginx-app.yaml
+
+      - name: Cat nginx-app
+        run: |
+          cat ./nginx-app.yaml
+
+      - name: Create kubeconfig
+        run: |
+          mkdir -p $HOME/.kube/
+
+      - name: Authenticate to Kubernetes cluster
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+        run: |
+          echo "${KUBE_CONFIG_DATA}" | base64 --decode > ${HOME}/.kube/config
+          kubectl config view
+          kubectl get nodes
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f ./nginx-app.yaml

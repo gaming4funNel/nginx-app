@@ -102,12 +102,12 @@ jobs:
       - name: Install Yandex Cloud CLI
         run: |
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-          export PATH="$HOME/.local/bin:$PATH"
+          source ~/.bashrc
           yc version
 
       - name: Configure Yandex Cloud
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
+          source ~/.bashrc
           yc config set token ${{ secrets.YC_TOKEN }}
 
       - name: Create kubeconfig

@@ -99,26 +99,31 @@ jobs:
         run: |
           cat ./nginx-app.yaml
 
-      - name: Install Yandex Cloud CLI
-        run: |
-          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-          source ~/.bashrc
-          yc version
-
-      - name: Configure Yandex Cloud
-        run: |
-          source ~/.bashrc
-          yc config set token ${{ secrets.YC_TOKEN }}
-
       - name: Create kubeconfig
         run: |
           mkdir -p $HOME/.kube/
 
-      - name: Authenticate to Kubernetes cluster
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      - name: Setup kubeconfig with token
         run: |
-          echo "${KUBE_CONFIG_DATA}" | base64 --decode > ${HOME}/.kube/config
+          cat > ${HOME}/.kube/config << EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - cluster:
+              certificate-authority-data: ${{ secrets.K8S_CA_DATA }}
+              server: https://158.160.167.197
+            name: yc-cluster
+          contexts:
+          - context:
+              cluster: yc-cluster
+              user: yc-user
+            name: yc-context
+          current-context: yc-context
+          users:
+          - name: yc-user
+            user:
+              token: ${{ secrets.K8S_TOKEN }}
+          EOF
           chmod 600 ${HOME}/.kube/config
           kubectl config view
           kubectl get nodes
